@@ -14,6 +14,9 @@ import datetime
 import re
 import networkx as nx
 
+# set the numpy random seed
+np.random.seed(42)
+
 # print all columns of pandas dataframes
 pd.options.display.max_columns = None
 
@@ -42,7 +45,10 @@ env.env.sim = pyswmm.simulation.Simulation(r"C:\\blind_swmm_controller_gamma\\ga
 env.env.sim.end_time = datetime.datetime(2020,6,20,0,0) # the file is set up to go much longer than we actually need to here
 
 # just for debugging, give us a super short simulation
-env.env.sim.end_time = datetime.datetime(2020,6,8,0,0) # the file is set up to go much longer than we actually need to here
+#env.env.sim.end_time = datetime.datetime(2020,6,6,0,0) # the file is set up to go much longer than we actually need to here
+# only observing and controlling 1, 4, 6, and 10
+env.config['states'] = [env.config['states'][0], env.config['states'][3], env.config['states'][5], env.config['states'][9]]
+env.config['action_space'] = [env.config['action_space'][0], env.config['action_space'][3], env.config['action_space'][5], env.config['action_space'][9]]
 
 
 env.env.sim.start()
@@ -50,12 +56,11 @@ done = False
 
 # Specify the maximum depths for each basin we are controlling
 # these are set to 0.5 multiplied by the surcharge depth in the swmm model so that we can accurately record exceeding the thresholds.
-basin_max_depths = [5., 5., 5., 5., 5., 10. , 5., 5. , 5., 13.72/2 , 14.96/2] # feet
+basin_max_depths = [5., 5., 10. , 13.72/2 ] # feet
+valve_max_flows = np.ones(4)*3.9 # cfs
 
-valve_max_flows = np.ones(11)*3.9 # cfs
-controlled_valves = [0,3,5,9] # valves 1, 4, 6, and 10 are controlled]
-actions_characterize = np.ones(11) # start all uncontroleld valves open
-actions_characterize[controlled_valves] = 0.0 # close all the controlled valves
+actions_characterize = np.zeros(4) # start all valves closed
+
 step = 0
 print("running characterization simulation")
 last_eval = datetime.datetime(2020,6,2,hour=0) # don't start opening valves until all the runoff has been stored
@@ -67,20 +72,27 @@ while not done:
         actions_characterize = np.ones(11) # nothing else is controlled
         # select i to be a random integer amongst the controllable valves which are 1, 4, 6, and 10
         i = np.random.randint(0,4)
-        valve_to_open = controlled_valves[i]
-        actions_characterize[valve_to_open] = 0.6/(i+1) # open one valve
+        if i == 0:
+            actions_characterize[i] = 1.0
+        elif i == 1:
+            actions_characterize[i] = 0.6
+        elif i == 2:
+            actions_characterize[i] = 0.05
+        elif i == 3:
+            actions_characterize[i] = 0.1
+            
+        
         for j in range(4):
             if j != i:
-                actions_characterize[controlled_valves[j]] = 0.0 # close the other valves
+                actions_characterize[j] = 0.0 # close the other valves
         
             
         
     elif env.env.sim.current_time.hour % 6 == 0 and env.env.sim.current_time.minute == 0 and (env.env.sim.current_time > last_eval + datetime.timedelta(minutes=2)):
-        actions_characterize = np.ones(11) # start all uncontroleld valves open
-        actions_characterize[controlled_valves] = 0.0 # close all the controlled valves
+        actions_characterize = np.zeros(4) # close all the controlled valves
 
     if env.env.sim.current_time.day >= 15:
-        actions_characterize = np.ones(11) # open everything to allow draining
+        actions_characterize = np.ones(4)*0.2 # open everything to allow slow draining
         
 
 
@@ -93,7 +105,6 @@ random_perf = sum(env.data_log["performance_measure"])
 print("performance of characterization:")
 print("{:.4e}".format(random_perf))
 
-obc_data = env.data_log
 
 fig,axes = plt.subplots(4,2)
 #fig.suptitle("Characterization experiment")
@@ -106,7 +117,7 @@ cfs2cms = 35.315
 ft2meters = 3.281
 # plot the valves
 for idx in range(4):
-    axes[idx,0].plot(obc_data['simulation_time'],np.array(obc_data['flow'][valves[idx]])/cfs2cms,color='k',linewidth=2)
+    axes[idx,0].plot( env.data_log['simulation_time'],np.array( env.data_log['flow'][valves[idx]])/cfs2cms,color='k',linewidth=2)
     # add a dotted red line indicating the flow threshold
     #axes[idx,0].hlines(3.9/cfs2cms, obc_data['simulation_time'][0],obc_data['simulation_time'][-1],label='Threshold',colors='r',linestyles='dashed',linewidth=2)
     #axes[idx,0].set_ylabel( str(  str(valves[idx]) + " Flow" ),rotation='horizontal',labelpad=8)
@@ -120,7 +131,7 @@ for idx in range(4):
 # plot the storage nodes
 for idx in range(4):
 
-    axes[idx,1].plot(obc_data['simulation_time'],np.array(obc_data['depthN'][storage_nodes[idx]])/ft2meters,color='k',linewidth=2)
+    axes[idx,1].plot( env.data_log['simulation_time'],np.array( env.data_log['depthN'][storage_nodes[idx]])/ft2meters,color='k',linewidth=2)
     #axes[idx,1].set_ylabel( str( str(storage_nodes[idx]) + " Depth"),rotation='horizontal',labelpad=8)
     axes[idx,1].annotate( str( str(storage_nodes[idx]) + " Depth"),xy=(0.5,0.8),xycoords='axes fraction',fontsize='xx-large')
     
@@ -138,18 +149,28 @@ plt.close('all')
 
 
 training_data = env.data_log
+for key in training_data['flow'].copy().keys():
+    if key not in env.config['action_space']:
+        training_data['flow'].pop(key)
+for key in training_data['depthN'].copy().keys():
+    key_is_state = False
+    for state in env.config['states']:
+        if key == state[0]:
+            key_is_state = True
+    if not key_is_state:
+        training_data['depthN'].pop(key)
+
 training_flows = pd.DataFrame.from_dict(training_data['flow'])
-training_flows.columns = env.config['action_space']
 training_depthN = pd.DataFrame.from_dict(training_data['depthN'])
-training_depthN.columns = env.config['states']
+#training_depthN.columns = env.config['states']
 training_response = pd.concat([training_flows, training_depthN], axis=1)
 training_response.index = env.data_log['simulation_time']
-# put the rainfall in there
+
 
 
 print(training_response)
 
-
+'''
 # for the columns of training_response which do not contain the string "O" (i.e. the depths)
 # if the current column name is "X", make it "(X, depthN)"
 # this is because the modpods library expects the depths to be named "X, depthN"
@@ -168,7 +189,7 @@ for col in training_response.columns:
         # if this isn't the depth of an asset controlled by a valve, drop it
         if valve_num - 1 not in controlled_valves:
             training_response.drop(columns=col,inplace=True)
-    
+   ''' 
 
 # for debugging resample to a coarser time step (native resolution is about one minute but not consistent)
 # need a consistent time step for modpods
@@ -196,40 +217,55 @@ print(training_response)
 
 dependent_columns = training_response.columns[-4:] # the depths of the controlled basins
 independent_columns = training_response.drop(columns = dependent_columns).columns # everything else (flows at the controlled basins)
-
+'''
 training_response.plot(subplots=True,figsize=(10,10))
 plt.show(block=False)
 plt.pause(10)
 plt.close('all')
+'''
 
-# read the topology from the swmm file (this is much cheaper)
-env.config['states'] = dependent_columns
-env.config['action_space'] = independent_columns 
-# the default is controlling all 11 orifices so we need to edit the environment
 print("defining topology")
 
 blind=True
-topo_infer_method = 'granger'
 # options are: 'granger', 'ccm', 'transfer-entropy'
+topo_infer_method = 'ccm'
+max_iter = 250
+max_transition_state_dim = 25
+
+
 if blind:
     print("inferring topology from data")
+    print(topo_infer_method)
 else:
     print("inferring topology from the swmm file, this is quick")
 
 if not blind:
+    # the above makes the names line up with the names in the training data
     swmm_topo = modpods.topo_from_pystorms(env)
     #swmm_topo['rain'] = 'd' 
 
     print(swmm_topo)
 
-    # learn the dynamics now, or load a previously learned model
+    # need to rename the columns and indices of the swmm_topo to match the training_response
+    # iterate through the columsn of the swmm_topo, if any of the columns are tuples, take the first element of the tuple
+    for col in swmm_topo.columns:
+        if type(col) == tuple:
+            swmm_topo.rename(columns={col: col[0]}, inplace=True)
+            # do the same with the rows
+    for idx in swmm_topo.index:
+        if type(idx) == tuple:
+            swmm_topo.rename(index={idx: idx[0]}, inplace=True)
+            print(swmm_topo)
+       
+    print(swmm_topo)
 
     # learn the dynamics from the trainingd response
+    # if you retrain this, remove the bibo stability assumption. the storage ndoes are integrators if their outlet is controlled and there's no infiltration / evaporation
     print("learning dynamics")
     lti_plant_approx_seeing = modpods.lti_system_gen(swmm_topo, training_response, 
                                                      independent_columns= independent_columns,
-                                                     dependent_columns = dependent_columns, max_iter = 250,
-                                                     swmm=True,bibo_stable=True,max_transition_state_dim=25)
+                                                     dependent_columns = dependent_columns, max_iter = max_iter,
+                                                     swmm=True,bibo_stable=True,max_transition_state_dim=max_transition_state_dim)
     # pickle the plant approximation to load later
     with open("C:/blind_swmm_controller_gamma/plant_approx_correct.pickle", 'wb') as handle:
         pickle.dump(lti_plant_approx_seeing, handle)
@@ -249,15 +285,31 @@ if blind:
     print("learning topology")
     topo, total_graph = modpods.infer_causative_topology(training_response,dependent_columns=dependent_columns,
                                             independent_columns=independent_columns,graph_type='Weak-Conn',
-                                            verbose=True, swmm=True, max_iter = 10,method=topo_infer_method)
+                                            verbose=True, swmm=True, max_iter = 10,method=topo_infer_method, derivative=True)
     
   
+    
+    # add "i"'s to the diagonal of the topology
+    for idx in topo.index:
+        topo.loc[idx,idx] = 'i'
     print(topo)
-
     # how does this compare to the correct topology derived from the swmm file?
     swmm_topo = modpods.topo_from_pystorms(env)
+    # iterate through the columsn of the swmm_topo, if any of the columns are tuples, take the first element of the tuple
+    for col in swmm_topo.columns:
+        if type(col) == tuple:
+            swmm_topo.rename(columns={col: col[0]}, inplace=True)
+    # do the same with the rows
+    for idx in swmm_topo.index:
+        if type(idx) == tuple:
+            swmm_topo.rename(index={idx: idx[0]}, inplace=True)
     print(swmm_topo)
     
+    # save the inferred topology to a csv file
+    topo.to_csv(str("C:/blind_swmm_controller_gamma/topo_" + str(topo_infer_method) + ".csv"))
+    # save the swmm topology to a csv file
+    swmm_topo.to_csv("C:/blind_swmm_controller_gamma/topo_correct.csv")
+
     swmm_topo_graph = swmm_topo.copy(deep=True) 
     swmm_topo_graph.values[:,:] = 0 # no connection
     swmm_topo_graph = swmm_topo_graph.astype('int64')
@@ -292,30 +344,35 @@ if blind:
     topo_graph.columns = topo_graph.columns.astype(str)
     topo_graph.index = topo_graph.index.astype(str)
 
+    # omit self-loops when plotting (just cleaner this way)
+    for idx in swmm_topo_graph.index:
+        swmm_topo_graph.loc[idx,idx] = 0
+    for idx in topo_graph.index:
+        topo_graph.loc[idx,idx] = 0
 
     print(swmm_topo_graph)
     print(topo_graph)
     
     # use networkx to draw the networks identified by the different methods
-    fig, axes = plt.subplots(1, 2, figsize=(20, 10))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
     axes[0].set_title("Correct Topology",fontsize='xx-large')
     axes[1].set_title("Inferred Topology",fontsize='xx-large')
     # draw the correct topology
     G = nx.from_pandas_adjacency(swmm_topo_graph, create_using=nx.DiGraph)
-    pos = nx.planar_layout(G)
-    nx.draw_networkx_nodes(G, pos, node_size=1000, ax=axes[0])
-    nx.draw_networkx_labels(G, pos, font_size=20, ax=axes[0])
-    nx.draw_networkx_edges(G, pos, arrows=True, ax=axes[0],edge_cmap='viridis', edge_vmin = 1,edge_vmax = 2,arrowsize=50)
+    pos = nx.spectral_layout(G)
+    nx.draw_networkx_nodes(G, pos, node_size=500, ax=axes[0])
+    nx.draw_networkx_labels(G, pos, font_size=12, ax=axes[0])
+    nx.draw_networkx_edges(G, pos, arrows=True, ax=axes[0],edge_cmap='viridis', edge_vmin = 1,edge_vmax = 2,arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.2")
     # draw the inferred topology
     G = nx.from_pandas_adjacency(topo_graph, create_using=nx.DiGraph)
     #pos = nx.planar_layout(G)
-    nx.draw_networkx_nodes(G, pos, node_size=1000,  ax=axes[1])
-    nx.draw_networkx_labels(G, pos, font_size=20, ax=axes[1])
-    nx.draw_networkx_edges(G, pos, arrows=True, ax=axes[1],edge_cmap='viridis', edge_vmin = 1,edge_vmax = 2,arrowsize=50)
+    nx.draw_networkx_nodes(G, pos, node_size=500,  ax=axes[1])
+    nx.draw_networkx_labels(G, pos, font_size=12, ax=axes[1])
+    nx.draw_networkx_edges(G, pos, arrows=True, ax=axes[1],edge_cmap='viridis', edge_vmin = 1,edge_vmax = 2,arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.2")
     plt.tight_layout()
     plt.savefig(str("C:/blind_swmm_controller_gamma/topo_comparison_" + str(topo_infer_method) + ".png"))
     plt.savefig(str("C:/blind_swmm_controller_gamma/topo_comparison_" + str(topo_infer_method) + ".svg"))
-    plt.show()
+    #plt.show()
     plt.close()
     
     
@@ -324,21 +381,21 @@ if blind:
     print("learning dynamics")
     lti_plant_approx_blind = modpods.lti_system_gen(topo, training_response, 
                                                      independent_columns= independent_columns,
-                                                     dependent_columns = dependent_columns, max_iter = 0,
-                                                     swmm=True,bibo_stable=True,max_transition_state_dim=25)
+                                                     dependent_columns = dependent_columns, max_iter = max_iter,
+                                                     swmm=True,bibo_stable=False,max_transition_state_dim=max_transition_state_dim)
     # pickle the plant approximation to load later
-    with open("C:/swmm_blind_controller_gamma/plant_approx_"+str(topo_infer_method) + ".pickle", 'wb') as handle:
+    with open("C:/blind_swmm_controller_gamma/plant_approx_"+str(topo_infer_method) + ".pickle", 'wb') as handle:
         pickle.dump(lti_plant_approx_blind, handle)
     # save the training dt as a text file
-    with open("C:/swmm_blind_controller_gamma/swmm_training_dt.txt", 'w') as handle:
+    with open("C:/blind_swmm_controller_gamma/swmm_training_dt.txt", 'w') as handle:
         handle.write(str(training_dt))  
-
-        '''
-    # load the plant approximation
-    with open("C:/swmm_blind_controller_gamma/plant_approx_"+str(topo_infer_method) + ".pickle", 'rb') as handle:
-        lti_plant_approx_seeing = pickle.load(handle)
-        '''
+    '''
         
+    # load the plant approximation
+    with open("C:/blind_swmm_controller_gamma/plant_approx_"+str(topo_infer_method) + ".pickle", 'rb') as handle:
+        lti_plant_approx_blind = pickle.load(handle)
+        
+    ''' 
     lti_plant_approx = lti_plant_approx_blind
 
 
@@ -356,15 +413,30 @@ independent_columns = [str(col) for col in independent_columns]
 # reindex the training_response to an integer step
 training_response.index = np.arange(0,len(training_response),1)
 
-approx_response = ct.forced_response(lti_plant_approx['system'], U=np.transpose(training_response[independent_columns].values), T=training_response.index.values)
+# construct the initial condition X0
+# first, start with a dataframe of zeros with the same index as the state space
+X0 = pd.DataFrame(columns=lti_plant_approx['A'].columns,index=[0])
+# now set the initial conditions for the depths to the first row of the training response
+for idx in range(4):
+    X0[dependent_columns[idx]] = training_response[dependent_columns[idx]].iloc[0]
+
+# fill na's with zeros
+X0.fillna(0.0,inplace=True)
+
+# now cast X0 to a flattened numpy array
+X0 = np.array(X0).flatten()
+
+approx_response = ct.forced_response(lti_plant_approx['system'], 
+                                     U=np.transpose(training_response[independent_columns].values), 
+                                     T=training_response.index.values, X0 = X0)
 approx_data = pd.DataFrame(index=training_response.index.values)
 for idx in range(4):
-    approx_data[dependent_columns[idx]] = approx_response.outputs[controlled_valves[idx]-1][:]
+    approx_data[dependent_columns[idx]] = approx_response.outputs[idx][:]
 
 output_columns = dependent_columns[0:4] # depths at storage nodes
 
 
-fig, axes = plt.subplots(4, 1, figsize=(10, 40))
+fig, axes = plt.subplots(4, 1, figsize=(10, 10))
 
 for idx in range(len(output_columns)):
     axes[idx].plot(training_response[output_columns[idx]],label='actual')
@@ -378,13 +450,13 @@ for idx in range(len(output_columns)):
 axes[0].set_title("outputs",fontsize='xx-large')
 plt.tight_layout()
 if not blind:
-    plt.savefig("C:/swmm_blind_controller_gamma/swmm_plant_approx_seeing.png")
-    plt.savefig("C:/swmm_blind_controller_gamma/swmm_plant_approx_seeing.svg")
+    plt.savefig("C:/blind_swmm_controller_gamma/swmm_plant_approx_seeing.png")
+    plt.savefig("C:/blind_swmm_controller_gamma/swmm_plant_approx_seeing.svg")
 if blind:
-    plt.savefig(str("C:/swmm_blind_controller_gamma/swmm_plant_approx_" + str(topo_infer_method) + ".png"))
-    plt.savefig(str("C:/swmm_blind_controller_gamma/swmm_plant_approx_" + str(topo_infer_method) + ".svg"))
+    plt.savefig(str("C:/blind_swmm_controller_gamma/swmm_plant_approx_" + str(topo_infer_method) + ".png"))
+    plt.savefig(str("C:/blind_swmm_controller_gamma/swmm_plant_approx_" + str(topo_infer_method) + ".svg"))
 
-plt.show()
+#plt.show()
 plt.close()
 
 print("plant estimation complete")
