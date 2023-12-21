@@ -8,8 +8,8 @@ import os
 from seaborn._core.properties import LineStyle
 
 # define the duration and recurrence interval of the storm
-duration = '_5-min_' # include the underscores to avoid including durations with prefixes or suffixes
-recurrence_intervals = '_1000.' # include the dot to avoid including recurrence intervals that append zeros to this (i.e., 1 would include 10, 100, and 1000)
+duration = '_24-hr_' # include the underscores to avoid including durations with prefixes or suffixes
+recurrence_intervals = '_100.' # include the dot to avoid including recurrence intervals that append zeros to this (i.e., 1 would include 10, 100, and 1000)
 cartoon=False
 #"G:\My Drive\EECS_563_Hybrid_Systems\project\provably-safe-hybrid-controller\simulation_results\equal_filling_2-day_1.pkl"
 
@@ -88,7 +88,7 @@ for idx in range(4):
     # add a dotted red line indicating the flow threshold
     axes[idx,0].hlines(3.9/cfs2cms, correct_data['simulation_time'][0],correct_data['simulation_time'][-1],label='Threshold',colors='r',linestyles='solid',linewidth=2,alpha=0.5)
     #axes[idx,0].set_ylabel( str(  str(valves[idx]) + " Flow" ),rotation='horizontal',labelpad=8)
-    axes[idx,0].annotate(str(  str(valves[idx]) + " Flow" ),xy=(0.5,0.8),xycoords='axes fraction',fontsize='xx-large')
+    axes[idx,0].annotate(str( "V" +   str(valves[idx][1:]) + " Flow" ),xy=(0.5,0.8),xycoords='axes fraction',fontsize='xx-large')
     if idx == 2:
         axes[idx,0].legend(fontsize='medium',loc='upper right')
     if idx != 3:

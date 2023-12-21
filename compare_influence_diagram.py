@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import networkx as nx
 
-
 # load the inferred topologies
 correct = False
 granger = False
@@ -156,24 +155,116 @@ for ax in axes:
 plt.tight_layout()
 plt.savefig(str("C:/blind_swmm_controller_gamma/all_influence_diagrams.png"))
 plt.savefig(str("C:/blind_swmm_controller_gamma/all_influence_diagrams.svg"))
+#plt.show()
+plt.close()
+
+
+
+# version 2: colorcode where the methods agree and differ. then add svg's of basins and rivers afterwards
+# use networkx to draw the networks identified by the different methods
+# change the "O's" to "V's"
+
+# if a column or index name has an "O" in it, replace it with a "V"
+# for all 4 graphs
+if correct:
+    for idx in correct_graph.index:
+        if "O" in idx:
+            correct_graph.rename(index={idx:idx.replace("O","V")},inplace=True)
+    for col in correct_graph.columns:
+        if "O" in col:
+            correct_graph.rename(columns={col:col.replace("O","V")},inplace=True)
+if granger:
+    for idx in granger_graph.index:
+        if "O" in idx:
+            granger_graph.rename(index={idx:idx.replace("O","V")},inplace=True)
+    for col in granger_graph.columns:
+        if "O" in col:
+            granger_graph.rename(columns={col:col.replace("O","V")},inplace=True)
+if transfer_entropy:
+    for idx in transfer_entropy_graph.index:
+        if "O" in idx:
+            transfer_entropy_graph.rename(index={idx:idx.replace("O","V")},inplace=True)
+    for col in transfer_entropy_graph.columns:
+        if "O" in col:
+            transfer_entropy_graph.rename(columns={col:col.replace("O","V")},inplace=True)
+if ccm:
+    for idx in ccm_graph.index:
+        if "O" in idx:
+            ccm_graph.rename(index={idx:idx.replace("O","V")},inplace=True)
+    for col in ccm_graph.columns:
+        if "O" in col:
+            ccm_graph.rename(columns={col:col.replace("O","V")},inplace=True)
+    
+
+
+fig, axes = plt.subplots(1, 4, figsize=(16, 4))
+axes[0].set_title("True",fontsize='xx-large')
+axes[1].set_title("Granger",fontsize='xx-large')
+axes[2].set_title("Transfer Entropy",fontsize='xx-large')
+axes[3].set_title("Convergent Cross Mapping",fontsize='x-large')
+# draw the correct topology
+G = nx.from_pandas_adjacency(correct_graph, create_using=nx.DiGraph)
+pos = nx.spectral_layout(G) # this position will be used for all the other graphs as well
+nx.draw_networkx_nodes(G, pos, node_size=600, ax=axes[0])
+nx.draw_networkx_labels(G, pos, font_size=12, ax=axes[0])
+nx.draw_networkx_edges(G, pos, arrows=True, ax=axes[0],edge_cmap='viridis', edge_vmin = 1,edge_vmax = 2,arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.3")
+
+correct_edges = list(G.edges())
+
+# draw granger
+if granger:
+    G = nx.from_pandas_adjacency(granger_graph, create_using=nx.DiGraph)
+    nx.draw_networkx_nodes(G, pos, node_size=600,  ax=axes[1])
+    nx.draw_networkx_labels(G, pos, font_size=12, ax=axes[1])
+
+    granger_edges = list(G.edges())
+    # colorcode where the methods agree and differ
+    for edge in granger_edges:
+        if edge in correct_edges:
+            nx.draw_networkx_edges(G, pos, edgelist=[edge],arrows=True, ax=axes[1],arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.3",edge_color='green')
+        else:
+            nx.draw_networkx_edges(G, pos, edgelist=[edge],arrows=True, ax=axes[1],arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.3",edge_color='red')
+
+
+# draw transfer entropy
+if transfer_entropy:
+    G = nx.from_pandas_adjacency(transfer_entropy_graph, create_using=nx.DiGraph)
+    nx.draw_networkx_nodes(G, pos, node_size=600,  ax=axes[2])
+    nx.draw_networkx_labels(G, pos, font_size=12, ax=axes[2])
+
+    transfer_entropy_edges = list(G.edges())
+    # colorcode where the methods agree and differ
+    for edge in transfer_entropy_edges:
+        if edge in correct_edges:
+            nx.draw_networkx_edges(G, pos, edgelist=[edge],arrows=True, ax=axes[2],arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.3",edge_color='green')
+        else:
+            nx.draw_networkx_edges(G, pos, edgelist=[edge],arrows=True, ax=axes[2],arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.3",edge_color='red')
+
+# draw ccm
+if ccm:
+    G = nx.from_pandas_adjacency(ccm_graph, create_using=nx.DiGraph)
+    nx.draw_networkx_nodes(G, pos, node_size=600,  ax=axes[3])
+    nx.draw_networkx_labels(G, pos, font_size=12, ax=axes[3])
+
+    ccm_edges = list(G.edges())
+    # colorcode where the methods agree and differ
+    for edge in ccm_edges:
+        if edge in correct_edges:
+            nx.draw_networkx_edges(G, pos, edgelist=[edge],arrows=True, ax=axes[3],arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.3",edge_color='green')
+        else:
+            nx.draw_networkx_edges(G, pos, edgelist=[edge],arrows=True, ax=axes[3],arrowsize=30,style='dashed',alpha=0.4,connectionstyle="arc3,rad=0.3",edge_color='red')
+
+
+# get rid of all the boudning boxes on all the axes
+for ax in axes:
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.axis('off')
+
+
+
+plt.tight_layout()
+plt.savefig(str("C:/blind_swmm_controller_gamma/all_influence_diagrams_v2.png"))
+plt.savefig(str("C:/blind_swmm_controller_gamma/all_influence_diagrams_v2.svg"))
 plt.show()
 #plt.close()
-
-# make consensus_data a dataframe which includes a 3 wherever all three of granger, transfer entropy, and ccm have something other than "n"
-# and a "2" wherever two of them have something other than "n"
-# and a "1" wherever only one of them has something other than "n"
-# don't include "correct" in this because it's not an inference method
-consensus_data = correct_data.copy(deep=True)
-consensus_data.values[:,:] = 0
-consensus_data = consensus_data.astype('int64')
-if granger:
-    consensus_data[granger_data != 'n'] += 1
-if transfer_entropy:
-    consensus_data[transfer_entropy_data != 'n'] += 1
-if ccm:
-    consensus_data[ccm_data != 'n'] += 1
-
-print(consensus_data)
-
-
-
