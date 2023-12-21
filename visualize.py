@@ -312,5 +312,97 @@ axes[1,0].set_ylabel("TSS\nLoading\n(kg)",fontsize='x-large',rotation='horizonta
 plt.tight_layout()
 plt.savefig("C:/blind_swmm_controller_gamma/total_results.png",dpi=600,transparent=True)
 plt.savefig("C:/blind_swmm_controller_gamma/total_results.svg",dpi=600,transparent=True)
+#plt.show()
+plt.close()
+
+
+
+# version 2, leave out the very long and very mild storms
+# for all the dataframes, drop the first 4 columns and the last 4 rows
+end_row = -5
+start_col = 0
+if uncontrolled:
+    tss_loading_uncontrolled = tss_loading_uncontrolled.iloc[:end_row,start_col:]
+    filling_degree_uncontrolled = filling_degree_uncontrolled.iloc[:end_row,start_col:]
+    flow_exceedance_uncontrolled = flow_exceedance_uncontrolled.iloc[:end_row,start_col:]
+if correct:
+    tss_loading_correct = tss_loading_correct.iloc[:end_row,start_col:]
+    filling_degree_correct = filling_degree_correct.iloc[:end_row,start_col:]
+    flow_exceedance_correct = flow_exceedance_correct.iloc[:end_row,start_col:]
+if granger:
+    tss_loading_granger = tss_loading_granger.iloc[:end_row,start_col:]
+    filling_degree_granger = filling_degree_granger.iloc[:end_row,start_col:]
+    flow_exceedance_granger = flow_exceedance_granger.iloc[:end_row,start_col:]
+if transfer_entropy:
+    tss_loading_transfer_entropy = tss_loading_transfer_entropy.iloc[:end_row,start_col:]
+    filling_degree_transfer_entropy = filling_degree_transfer_entropy.iloc[:end_row,start_col:]
+    flow_exceedance_transfer_entropy = flow_exceedance_transfer_entropy.iloc[:end_row,start_col:]
+if ccm:
+    tss_loading_ccm = tss_loading_ccm.iloc[:end_row,start_col:]
+    filling_degree_ccm = filling_degree_ccm.iloc[:end_row,start_col:]
+    flow_exceedance_ccm = flow_exceedance_ccm.iloc[:end_row,start_col:]
+
+# set new maxes according to the new dataframes
+tss_max = max(tss_loading_uncontrolled.max().max(), tss_loading_correct.max().max(), tss_loading_granger.max().max(),
+              tss_loading_transfer_entropy.max().max(), tss_loading_ccm.max().max())
+filling_degree_max = max(filling_degree_uncontrolled.max().max(), filling_degree_correct.max().max(), filling_degree_granger.max().max(),
+                         filling_degree_transfer_entropy.max().max(), filling_degree_ccm.max().max())
+              
+
+
+# make mega-figure (leave out flow exceedance for now)
+fig,axes = plt.subplots(2,6)
+
+# make the sixth column a quarter as wide as the others (legend)
+axes[0,5].set_box_aspect(4)
+axes[1,5].set_box_aspect(4)
+
+# make the figure 3 times as wide as it is tall
+fig.set_size_inches(18,6)
+axes[0,0].set_title("Uncontrolled",fontsize='x-large')
+axes[0,1].set_title("Correct",fontsize='x-large')
+axes[0,2].set_title("Granger",fontsize='x-large')
+axes[0,3].set_title("Transfer Entropy",fontsize='x-large')
+axes[0,4].set_title("CCM",fontsize='x-large')
+
+# filling degree
+sns.heatmap(filling_degree_uncontrolled,ax=axes[0,0],cbar=False,vmin=0,vmax=filling_degree_max,yticklabels='auto',xticklabels=False)
+sns.heatmap(filling_degree_correct,ax=axes[0,1],cbar=False,vmin=0,vmax=filling_degree_max,yticklabels=False,xticklabels=False)
+sns.heatmap(filling_degree_granger,ax=axes[0,2],cbar=False,vmin=0,vmax=filling_degree_max,yticklabels=False,xticklabels=False)
+sns.heatmap(filling_degree_transfer_entropy,ax=axes[0,3],cbar=False,vmin=0,vmax=filling_degree_max,yticklabels=False,xticklabels=False)
+sns.heatmap(filling_degree_ccm,ax=axes[0,4],cbar=True,cbar_ax = axes[0,5],vmin=0,vmax=filling_degree_max,yticklabels=False,xticklabels=False)
+
+axes[0,0].contour(filling_degree_uncontrolled, levels=[0.5,0.99], colors=['white','black'])
+axes[0,1].contour(filling_degree_correct, levels=[0.5,0.99], colors=['white','black'])
+axes[0,2].contour(filling_degree_granger, levels=[0.5,0.99], colors=['white','black'])
+axes[0,3].contour(filling_degree_transfer_entropy, levels=[0.5,0.99], colors=['white','black'])
+axes[0,4].contour(filling_degree_ccm, levels=[0.5,0.99], colors=['white','black'])
+axes[0,5].axhline(0.5, color='white')
+axes[0,5].axhline(0.99, color='black')
+
+# tss loading in the second row, make the contour lines at 100 and 250
+sns.heatmap(tss_loading_uncontrolled,ax = axes[1,0],cbar=False,vmin=0,vmax=tss_max,yticklabels='auto',xticklabels='auto')
+sns.heatmap(tss_loading_correct,ax = axes[1,1],cbar=False,vmin=0,vmax=tss_max,yticklabels=False,xticklabels='auto')
+sns.heatmap(tss_loading_granger,ax = axes[1,2],cbar=False,vmin=0,vmax=tss_max,yticklabels=False,xticklabels='auto')
+sns.heatmap(tss_loading_transfer_entropy,ax = axes[1,3],cbar=False,vmin=0,vmax=tss_max,yticklabels=False,xticklabels='auto')
+sns.heatmap(tss_loading_ccm,ax = axes[1,4],cbar=True,cbar_ax = axes[1,5],vmin=0,vmax=tss_max,yticklabels=False,xticklabels='auto')
+
+axes[1,0].contour(tss_loading_uncontrolled, levels=[50,350], colors=['white','black'])
+axes[1,1].contour(tss_loading_correct, levels=[50,350], colors=['white','black'])
+axes[1,2].contour(tss_loading_granger, levels=[50,350], colors=['white','black'])
+axes[1,3].contour(tss_loading_transfer_entropy, levels=[5,350], colors=['white','black'])
+axes[1,4].contour(tss_loading_ccm, levels=[50,350], colors=['white','black'])
+axes[1,5].axhline(50, color='white')
+axes[1,5].axhline(350, color='black')
+
+axes[0,5].set_ylabel("Max\nFilling\nDegree",fontsize='x-large',rotation='horizontal',labelpad=-125.0) # was +30
+axes[1,5].set_ylabel("TSS\nLoading\n(kg)",fontsize='x-large',rotation='horizontal',labelpad=-125.0)
+
+
+
+
+plt.tight_layout()
+plt.savefig("C:/blind_swmm_controller_gamma/total_results_v2.png",dpi=600,transparent=True)
+plt.savefig("C:/blind_swmm_controller_gamma/total_results_v2.svg",dpi=600,transparent=True)
 plt.show()
 plt.close()
